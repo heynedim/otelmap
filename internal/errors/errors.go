@@ -2,7 +2,7 @@ package errorz
 
 import "errors"
 
-var ErrErrorWileStartingOTel = errors.New("error while starting OTel")
+var ErrErrorWhileStartingOTel = errors.New("error while starting OTel")
 var ErrConfigNotFound = errors.New("config not found")
 var ErrServerError = errors.New("server error")
 var ErrDatabaseError = errors.New("database error")

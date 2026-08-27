@@ -1,6 +1,7 @@
 # Environment files (CRITICAL - never commit secrets)
 .env
 .env.*
+!.env.production.example
 production.env
 staging.env
 development.env

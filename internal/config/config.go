@@ -7,13 +7,15 @@ import (
 )
 
 type Config struct {
-	Port             string        `env:"PORT" envDefault:"8000"`
-	ClickHouseDSN    string        `env:"CLICKHOUSE_DSN" envDefault:"clickhouse://default:default@localhost:9000/default?dial_timeout=5s&compress=true"`
-	LogLevel         string        `env:"LOG_LEVEL" envDefault:"info"`
-	ServiceName      string        `env:"SERVICE_NAME" envDefault:"default"`
-	ShutdownTimeoutS int           `env:"SHUTDOWN_TIMEOUT_SECONDS" envDefault:"10"`
-	BaseURL          string        `env:"BASE_URL" envDefault:"otelmap.com"`
-	ShutdownTimeout  time.Duration `env:"-"`
+	Port               string        `env:"PORT" envDefault:"8000"`
+	ClickHouseDSN      string        `env:"CLICKHOUSE_DSN" envDefault:"clickhouse://default:default@localhost:9000/default?dial_timeout=5s&compress=true"`
+	LogLevel           string        `env:"LOG_LEVEL" envDefault:"info"`
+	ServiceName        string        `env:"SERVICE_NAME" envDefault:"default"`
+	ShutdownTimeoutS   int           `env:"SHUTDOWN_TIMEOUT_SECONDS" envDefault:"10"`
+	OTLPHTTPURL        string        `env:"OTLP_HTTP_URL" envDefault:"http://localhost/v1/traces"`
+	OTLPGRPCURL        string        `env:"OTLP_GRPC_URL" envDefault:"http://localhost:4317"`
+	CORSAllowedOrigins string        `env:"CORS_ALLOWED_ORIGINS" envDefault:"*"`
+	ShutdownTimeout    time.Duration `env:"-"`
 }
 
 func Load() (Config, error) {
