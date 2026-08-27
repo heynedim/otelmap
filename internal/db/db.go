@@ -2,17 +2,21 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/tracing"
 
 	"github.com/jack5341/otel-map-server/internal/models"
 )
 
-func Open(dsn string) (*gorm.DB, error) {
-	gormDB, err := gorm.Open(clickhouse.Open(dsn), &gorm.Config{})
+func Open(dsn string, logLevel string) (*gorm.DB, error) {
+	gormDB, err := gorm.Open(clickhouse.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(gormLogLevel(logLevel)),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +37,7 @@ func Open(dsn string) (*gorm.DB, error) {
 	}
 
 	if err := gormDB.Use(tracing.NewPlugin()); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	// Skip OtelTrace auto-migration as it conflicts with ClickHouse schema
@@ -43,4 +47,19 @@ func Open(dsn string) (*gorm.DB, error) {
 	}
 
 	return gormDB, nil
+}
+
+func gormLogLevel(level string) logger.LogLevel {
+	switch strings.ToLower(level) {
+	case "debug":
+		return logger.Info
+	case "info":
+		return logger.Warn
+	case "warn":
+		return logger.Warn
+	case "error":
+		return logger.Error
+	default:
+		return logger.Silent
+	}
 }

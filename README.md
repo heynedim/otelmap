@@ -16,7 +16,7 @@ OpenTelemetry traces → ClickHouse storage → Service Map API. This project in
 - NGINX reverse proxy routes traffic:
   - `/api/*` → Go API server (`server:8000`)
   - `/v1/*` → OTLP HTTP to collector (`otelcollector:4318`)
-  - gRPC traffic → OTLP gRPC to collector (`otelcollector:4317`)
+- OTLP gRPC goes direct to the collector (`otelcollector:4317`, published on the host)
 - OpenTelemetry Collector writes to ClickHouse tables
 - Go API reads from ClickHouse and returns a service-map DTO
 
@@ -41,16 +41,17 @@ flowchart TD
 - Docker and Docker Compose
 
 ### Environment variables (.env.production)
-Create `.env.production` in the repo root with:
+Copy `.env.production.example` to `.env.production` in the repo root and adjust:
 
 ```env
-# Required
 PORT=8000
 SERVICE_NAME=otel-map-server
 LOG_LEVEL=info
 SHUTDOWN_TIMEOUT_SECONDS=10
 CLICKHOUSE_DSN=clickhouse://default:default@clickhouse:9000/default?dial_timeout=5s&compress=true
-BASE_URL=localhost
+OTLP_HTTP_URL=http://localhost/v1/traces
+OTLP_GRPC_URL=http://localhost:4317
+CORS_ALLOWED_ORIGINS=*
 ```
 
 ### Run with Docker Compose
@@ -64,7 +65,7 @@ Services:
 - clickhouse:9000 (native), 8123 (HTTP)
 - otelcollector:4317 (gRPC), 4318 (HTTP), 13133 (health)
 - server:8000 (internal API)
-- nginx:80, 443 (reverse proxy)
+- nginx:80 (reverse proxy; 443 is published for future TLS termination)
 
 After startup, the endpoints will be available at:
 - `http://localhost/api/v1/*` (API endpoints)
@@ -76,16 +77,17 @@ After startup, the endpoints will be available at:
 - `GET /api/v1/readyz` → readiness check
 - `POST /api/v1/session-token` → returns a session token and example ingest config
 - `GET /api/v1/session-events?token=<uuid>` → SSE endpoint for listening to trace events
-- `GET /api/v1/service-map/:session-token?start=RFC3339&end=RFC3339` → get service map
+- `GET /api/v1/service-map/:session-token` → get service map
 
 ### Service Map Response
 - Direct, Jaeger-style service dependencies are returned as deduplicated parent→child edges.
 - Per-service fields:
-  - `name`, `count`, `rps`, `throughput_bps`, `error_rate`.
+  - `service_name`, `total_requests`, `error_count`, `error_rate`, `latency_p50_ms`, `latency_p90_ms`, `latency_p95_ms`.
 - Per-edge fields:
-  - `source` (service), `target` (service), `rps`.
+  - `source_service_name`, `target_service_name`, `target_service_path`, `total_requests`, `requests_per_second`.
 - Time window:
-  - Service `rps` and edge `rps` are computed over the last 60 seconds relative to the request time.
+  - Metrics cover the whole session (all spans carrying the session token).
+  - Edge `requests_per_second` is computed over the session's observed time window.
 
 Example
 
@@ -93,25 +95,31 @@ Example
 {
   "services": [
     {
-      "name": "frontend",
-      "count": 1234,
-      "rps": 12.3,
-      "throughput_bps": 456789.0,
-      "error_rate": 0.02
+      "service_name": "frontend",
+      "total_requests": 1234,
+      "error_count": 25,
+      "error_rate": 0.02,
+      "latency_p50_ms": 12.3,
+      "latency_p90_ms": 45.6,
+      "latency_p95_ms": 78.9
     },
     {
-      "name": "backend",
-      "count": 980,
-      "rps": 9.8,
-      "throughput_bps": 321000.0,
-      "error_rate": 0.01
+      "service_name": "backend",
+      "total_requests": 980,
+      "error_count": 10,
+      "error_rate": 0.01,
+      "latency_p50_ms": 8.1,
+      "latency_p90_ms": 30.2,
+      "latency_p95_ms": 55.4
     }
   ],
   "edges": [
     {
-      "source": { "name": "frontend", "count": 1234, "rps": 12.3, "throughput_bps": 456789.0, "error_rate": 0.02 },
-      "rps": 8.5,
-      "target": { "name": "backend", "count": 980, "rps": 9.8, "throughput_bps": 321000.0, "error_rate": 0.01 }
+      "source_service_name": "frontend",
+      "target_service_name": "backend",
+      "target_service_path": "GET /api/orders",
+      "total_requests": 980,
+      "requests_per_second": 8.5
     }
   ]
 }
@@ -128,8 +136,8 @@ curl -X POST http://localhost/api/v1/session-token
 
 The response contains:
 - `token`: your unique session token (UUID)
-- `ingest.otlp_http_url`: e.g., `http://localhost/v1/traces`
-- `ingest.otlp_grpc_url`: e.g., `http://localhost:4317`
+- `ingest.otlp_http_url`: from `OTLP_HTTP_URL` (default `http://localhost/v1/traces`)
+- `ingest.otlp_grpc_url`: from `OTLP_GRPC_URL` (default `http://localhost:4317`)
 - `ingest.resource_attribute`: `{ key: "otelmap.session_token", value: <token> }`
 
 **Important**: Ensure your tracer sets the resource attribute `otelmap.session_token` with your session token value so spans are associated with your session.
@@ -141,7 +149,7 @@ The response contains:
 - All spans created in handlers and `MapManager` use the incoming context for proper trace continuity
 
 ### Troubleshooting
-- Ingest: `curl http://localhost/v1/traces -I` should return 405/404 (collector present)
+- Ingest: `curl http://localhost:4318/v1/traces -I` should return 405/404 (collector present). Through nginx use the `otlp.otelmap.com` (or `otlp.localhost`) host, since the default vhost serves the API.
 - Collector health: `curl http://localhost:13133/healthz`
 - ClickHouse connectivity: `docker exec -it <clickhouse-container> clickhouse-client --query "SELECT 1"`
 - Service map empty: ensure spans include the `otelmap.session_token` resource attribute matching your session token
@@ -152,5 +160,7 @@ The response contains:
 Standard Go module project. Key packages:
 - `cmd/server`: main entrypoint
 - `internal/http`: Echo routing and middleware
-- `internal/handlers`: handlers for health, session token, and service map
-- `pkg/map_manager`: builds the map DTO from ClickHouse rows
+- `internal/handlers`: handlers for health, session token, session events, and service map
+- `internal/mapz`: builds the map DTO from ClickHouse rows
+
+Useful targets: `make build`, `make run`, `make test`, `make vet`, `make fmt`.

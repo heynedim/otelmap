@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"strings"
+
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
 	"go.opentelemetry.io/otel"
@@ -8,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func Apply(e *echo.Echo, otelTracer trace.Tracer) {
+func Apply(e *echo.Echo, otelTracer trace.Tracer, corsAllowedOrigins string) {
 	e.HideBanner = true
 	e.HidePort = true
 
@@ -16,7 +18,9 @@ func Apply(e *echo.Echo, otelTracer trace.Tracer) {
 	e.Use(echomw.RequestID())
 	e.Use(echomw.Logger())
 	e.Use(echomw.Secure())
-	e.Use(echomw.CORS())
+	e.Use(echomw.CORSWithConfig(echomw.CORSConfig{
+		AllowOrigins: parseOrigins(corsAllowedOrigins),
+	}))
 	e.Use(echomw.RateLimiter(echomw.NewRateLimiterMemoryStore(20)))
 	e.Pre(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -26,4 +30,18 @@ func Apply(e *echo.Echo, otelTracer trace.Tracer) {
 			return next(c)
 		}
 	})
+}
+
+func parseOrigins(csv string) []string {
+	fields := strings.Split(csv, ",")
+	origins := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if o := strings.TrimSpace(f); o != "" {
+			origins = append(origins, o)
+		}
+	}
+	if len(origins) == 0 {
+		return []string{"*"}
+	}
+	return origins
 }

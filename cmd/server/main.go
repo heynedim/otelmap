@@ -28,7 +28,7 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		panic(errors.Join(errorz.ErrConfigNotFound, err))
+		log.Fatal(errors.Join(errorz.ErrConfigNotFound, err))
 	}
 
 	log.Println("config loaded")
@@ -37,7 +37,7 @@ func main() {
 	if err != nil {
 		exp, expErr := stdouttrace.New(stdouttrace.WithPrettyPrint())
 		if expErr != nil {
-			panic(errors.Join(errorz.ErrErrorWileStartingOTel, err))
+			log.Fatal(errors.Join(errorz.ErrErrorWhileStartingOTel, err))
 		}
 		tp := sdktrace.NewTracerProvider(
 			sdktrace.WithBatcher(exp),
@@ -45,15 +45,15 @@ func main() {
 				semconv.ServiceName(cfg.ServiceName),
 			)),
 		)
-		shutdownFn := func() { _ = tp.Shutdown(context.Background()) }
-		otelShutdown = shutdownFn
+		otel.SetTracerProvider(tp)
+		otelShutdown = func() { _ = tp.Shutdown(context.Background()) }
 	}
 	defer otelShutdown()
 
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-	database, err := db.Open(cfg.ClickHouseDSN)
+	database, err := db.Open(cfg.ClickHouseDSN, cfg.LogLevel)
 	if err != nil {
-		panic(errors.Join(errorz.ErrDatabaseError, err))
+		log.Fatal(errors.Join(errorz.ErrDatabaseError, err))
 	}
 
 	log.Println("database initialized")
@@ -62,11 +62,12 @@ func main() {
 	otelTracer := otel.Tracer(cfg.ServiceName)
 	httpserver.Register(e, database, otelTracer, &cfg)
 
+	// WriteTimeout must stay 0: it is a per-request deadline, and the SSE
+	// endpoint streams for up to 60s (bounded by its own timeout).
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 

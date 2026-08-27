@@ -1,9 +1,8 @@
-version: "3"
-
 services:
   otelcollector:
     image: otel/opentelemetry-collector-contrib:0.114.0
     container_name: otel
+    restart: unless-stopped
     command:
       - "--config=/etc/otel-collector-config.yml"
       - "--set=service.telemetry.logs.level=INFO"
@@ -21,6 +20,7 @@ services:
       - web
   clickhouse:
     image: clickhouse/clickhouse-server:25.9
+    restart: unless-stopped
     ports:
       - "9000:9000"
       - "8123:8123"
@@ -33,7 +33,7 @@ services:
     env_file:
       - path: ".env.production"
         required: true
-    networks: 
+    networks:
       - otel-clickhouse
       - web
     volumes:
@@ -43,6 +43,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "8000:8000"
     networks:
@@ -54,7 +55,6 @@ services:
     env_file:
       - path: ".env.production"
         required: true
-    labels: []
 
   nginx:
     image: nginx:1.27-alpine
