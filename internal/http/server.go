@@ -12,7 +12,7 @@ import (
 )
 
 func Register(e *echo.Echo, db *gorm.DB, otelTracer trace.Tracer, config *config.Config) {
-	imw.Apply(e, otelTracer)
+	imw.Apply(e, otelTracer, config.CORSAllowedOrigins)
 
 	api := e.Group("/api")
 	v1 := api.Group("/v1")

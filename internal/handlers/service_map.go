@@ -13,10 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type ServiceMapRequest struct {
-	ID uuid.UUID `json:"id"`
-}
-
 type ServiceMapHandler struct {
 	db         *gorm.DB
 	otelTracer trace.Tracer
@@ -51,12 +47,14 @@ func (h *ServiceMapHandler) Get(c echo.Context) error {
 	mapper := mapz.NewMapper(h.db, h.otelTracer, dbCtx)
 	services, err := mapper.GetServicesWithMetrics(sessionToken)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		c.Logger().Error(err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load services"})
 	}
 
 	edges, err := mapper.GetEdges(sessionToken)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		c.Logger().Error(err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load edges"})
 	}
 
 	serviceMapResponse := ServiceMapResponse{

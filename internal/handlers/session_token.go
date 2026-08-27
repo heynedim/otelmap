@@ -49,8 +49,8 @@ func (h *SessionTokenHandler) Create(c echo.Context) error {
 	resp := SessionTokenResponse{
 		Token: token.String(),
 		Ingest: IngestConfig{
-			OTLPHTTPURL: "https://otlp." + h.config.BaseURL + "/v1/traces",
-			OTLPGRPCURL: "https://otlp." + h.config.BaseURL + "/opentelemetry.proto",
+			OTLPHTTPURL: h.config.OTLPHTTPURL,
+			OTLPGRPCURL: h.config.OTLPGRPCURL,
 			HeaderKey:   "X-OTEL-SESSION",
 			HeaderValue: token.String(),
 			ResourceAttribute: struct {

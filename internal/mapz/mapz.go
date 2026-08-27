@@ -60,7 +60,9 @@ SELECT
     c.ServiceName AS target_service_name,
     c.Path AS target_service_path,
     COUNT() AS total_requests,
-    ROUND(COUNT() / (SELECT window_seconds FROM Duration), 2) AS requests_per_second
+    -- greatest(..., 1) guards against an empty Duration CTE (window < 1s),
+    -- which would otherwise divide by zero and yield +Inf (unmarshalable to JSON)
+    ROUND(COUNT() / greatest((SELECT window_seconds FROM Duration), 1), 2) AS requests_per_second
 FROM ServiceNode AS c
 INNER JOIN ServiceNode AS p
     ON c.ParentSpanId = p.SpanId 
@@ -79,7 +81,7 @@ SELECT
     ROUND(quantileTDigest(0.50)(t.Duration) / 1000000, 2) AS latency_p50_ms,
     ROUND(quantileTDigest(0.90)(t.Duration) / 1000000, 2) AS latency_p90_ms,
     ROUND(quantileTDigest(0.95)(t.Duration) / 1000000, 2) AS latency_p95_ms
-FROM otel_traces AS t
+FROM default.otel_traces AS t
 WHERE t.ResourceAttributes['otelmap.session_token'] = ?
 GROUP BY service_name
 ORDER BY total_requests DESC
@@ -114,7 +116,7 @@ func (m *Mapper) GetEdges(sessionToken string) ([]Edge, error) {
 		return nil, errorz.ErrSessionTokenRequired
 	}
 
-	var edges []Edge
+	edges := []Edge{}
 	err := m.db.WithContext(ctx).Raw(getEdgesQuery, sessionToken).Scan(&edges).Error
 	if err != nil {
 		return nil, errors.Join(errorz.ErrWhileGettingEdges, err)
@@ -131,7 +133,7 @@ func (m *Mapper) GetServicesWithMetrics(sessionToken string) ([]Service, error) 
 		return nil, errorz.ErrSessionTokenRequired
 	}
 
-	var services []Service
+	services := []Service{}
 	err := m.db.WithContext(ctx).Raw(getServicesWithMetricsQuery, sessionToken).Scan(&services).Error
 	if err != nil {
 		return nil, errors.Join(errorz.ErrWhileGettingServicesWithMetrics, err)
